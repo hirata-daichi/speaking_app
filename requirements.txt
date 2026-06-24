@@ -1,0 +1,7 @@
+gradio==4.44.1
+faster-whisper
+fastapi==0.112.4
+huggingface-hub<1.0
+pydantic==2.10.6
+requests
+starlette==0.38.6
