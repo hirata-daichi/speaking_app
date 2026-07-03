@@ -211,16 +211,54 @@ Return only valid JSON with this exact structure:
     "naturalness": 0
   }},
   "corrected_answer": "",
-  "feedback_ja": "",
+  "key_corrections": [
+    {{
+      "original": "",
+      "corrected": "",
+      "reason_ja": ""
+    }}
+  ],
+  "feedback_ja": {{
+    "good_points": "",
+    "grammar_points": "",
+    "vocabulary_points": "",
+    "next_step": ""
+  }},
   "model_answer": ""
 }}
 
 Scoring rules:
 - each score in scores must be an integer from 1 to 5.
 - overall_score must be the sum of relevance, grammar, vocabulary, and naturalness, so it must be an integer from 4 to 20.
-- feedback_ja must be concise Japanese feedback.
-- corrected_answer should preserve the learner's intended meaning.
-- model_answer should match the learner level.
+- Use this scale for each score:
+  - 5 = very good, no major issue.
+  - 4 = good, only minor issues.
+  - 3 = understandable, but with several issues.
+  - 2 = difficult to understand, with many issues.
+  - 1 = mostly unclear or does not answer the question.
+- relevance means how well the answer responds to the question.
+- grammar means grammatical accuracy.
+- vocabulary means appropriate word choice and phrase use.
+- naturalness means how natural the English sounds in context.
+
+Output rules:
+- corrected_answer must preserve the learner's original meaning.
+- corrected_answer should fix grammar, word choice, and unnatural expressions.
+- Do not add new ideas to corrected_answer.
+- key_corrections should include 1 to 3 important corrections.
+- Each key_corrections item must compare the learner's original wording with the corrected wording.
+- key_corrections.reason_ja must explain the correction in Japanese.
+- If there are no important corrections, return an empty array.
+- feedback_ja must be written in Japanese.
+- feedback_ja.good_points should mention what the learner did well.
+- feedback_ja.grammar_points should explain one or two grammar issues with examples.
+- feedback_ja.vocabulary_points should suggest better words or phrases if useful.
+- feedback_ja.next_step should give one concrete improvement goal for the next answer.
+- model_answer must be a different sample answer to the same question.
+- model_answer should be appropriate for the learner level.
+- model_answer should be 2 to 4 sentences.
+- model_answer must be written in English.
+- Do not make model_answer too advanced for the learner level.
 """.strip()
     raw = call_ollama(prompt, temperature=0.1)
     try:
@@ -235,17 +273,92 @@ Scoring rules:
                 "naturalness": "-",
             },
             "corrected_answer": "",
-            "feedback_ja": f"LLMの出力をJSONとして解釈できませんでした: {exc}",
+            "key_corrections": [],
+            "feedback_ja": {
+                "good_points": "",
+                "grammar_points": f"LLMの出力をJSONとして解釈できませんでした: {exc}",
+                "vocabulary_points": "",
+                "next_step": "もう一度評価を実行してください。",
+            },
             "model_answer": raw,
         }
 
 
+def format_key_corrections(corrections: Any) -> str:
+    if not isinstance(corrections, list) or not corrections:
+        return "大きな修正点はありません。"
+
+    def table_cell(value: Any) -> str:
+        return str(value or "").replace("\n", " ").replace("|", "\\|").strip()
+
+    rows = [
+        "| Original | Corrected | Reason |",
+        "| --- | --- | --- |",
+    ]
+    for item in corrections:
+        if not isinstance(item, dict):
+            continue
+        original = table_cell(item.get("original", ""))
+        corrected = table_cell(item.get("corrected", ""))
+        reason = table_cell(item.get("reason_ja", ""))
+        rows.append(f"| {original} | {corrected} | {reason} |")
+
+    if len(rows) == 2:
+        return "大きな修正点はありません。"
+    return "\n".join(rows)
+
+
+def format_feedback(feedback: Any) -> str:
+    if isinstance(feedback, dict):
+        return f"""
+**良い点:** {feedback.get("good_points", "")}
+
+**文法:** {feedback.get("grammar_points", "")}
+
+**語彙・表現:** {feedback.get("vocabulary_points", "")}
+
+**次に意識すること:** {feedback.get("next_step", "")}
+""".strip()
+
+    return str(feedback or "")
+
+
+def parse_score(value: Any) -> int | None:
+    try:
+        score = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    if 1 <= score <= 5:
+        return score
+    return None
+
+
+def calculate_overall_score(scores: Any) -> int | str:
+    if not isinstance(scores, dict):
+        return "-"
+
+    score_values = [
+        parse_score(scores.get("relevance")),
+        parse_score(scores.get("grammar")),
+        parse_score(scores.get("vocabulary")),
+        parse_score(scores.get("naturalness")),
+    ]
+    if any(score is None for score in score_values):
+        return "-"
+
+    return sum(score for score in score_values if score is not None)
+
+
 def format_result(result: dict[str, Any]) -> str:
     scores = result.get("scores", {})
+    overall_score = calculate_overall_score(scores)
+    key_corrections = format_key_corrections(result.get("key_corrections", []))
+    feedback = format_feedback(result.get("feedback_ja", ""))
     return f"""
 ## Score
 
-**Overall:** {result.get("overall_score", "-")} / 20
+**Overall:** {overall_score} / 20
 
 | Criterion | Score |
 | --- | --- |
@@ -258,13 +371,13 @@ def format_result(result: dict[str, Any]) -> str:
 
 {result.get("corrected_answer", "")}
 
-## More Natural Expression
+## Key Corrections
 
-{result.get("more_natural_answer", "")}
+{key_corrections}
 
 ## Feedback
 
-{result.get("feedback_ja", "")}
+{feedback}
 
 ## Model Answer
 
