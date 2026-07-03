@@ -185,6 +185,36 @@ def extract_json(text: str) -> dict[str, Any]:
         raise
 
 
+def contains_japanese(text: Any) -> bool:
+    if not isinstance(text, str):
+        return False
+
+    return any(
+        "\u3040" <= char <= "\u30ff" or "\u4e00" <= char <= "\u9fff"
+        for char in text
+    )
+
+
+def generate_english_model_answer(question: str, level: str) -> str:
+    prompt = f"""
+Write a sample answer to this English speaking practice question.
+
+Question:
+{question}
+
+Learner level:
+{level}
+
+Rules:
+- Return only the sample answer.
+- Write only in English.
+- Do not use Japanese.
+- Use 2 to 4 sentences.
+- Keep the English appropriate for the learner level.
+""".strip()
+    return call_ollama(prompt, temperature=0.2)
+
+
 def evaluate_answer(question: str, transcript: str, level: str) -> dict[str, Any]:
     prompt = f"""
 You are an English speaking tutor for Japanese learners.
@@ -257,12 +287,18 @@ Output rules:
 - model_answer must be a different sample answer to the same question.
 - model_answer should be appropriate for the learner level.
 - model_answer should be 2 to 4 sentences.
-- model_answer must be written in English.
+- model_answer must be written only in English.
+- model_answer must not contain Japanese characters.
+- model_answer must not translate the answer into Japanese.
+- The only field that should be written in Japanese is feedback_ja and key_corrections.reason_ja.
 - Do not make model_answer too advanced for the learner level.
 """.strip()
     raw = call_ollama(prompt, temperature=0.1)
     try:
-        return extract_json(raw)
+        result = extract_json(raw)
+        if contains_japanese(result.get("model_answer")):
+            result["model_answer"] = generate_english_model_answer(question, level)
+        return result
     except Exception as exc:
         return {
             "overall_score": "形式エラー",
