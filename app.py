@@ -119,14 +119,14 @@ def get_fixed_question(level: str, topic: str) -> str:
 
 def call_ollama(prompt: str, temperature: float = 0.2) -> str:
     response = requests.post(
-        f"{OLLAMA_BASE_URL}/api/generate",
+        f"{OLLAMA_BASE_URL}/api/generate",   # http://localhost:11434/api/generate このエンドポイント（自分のPC上で起動しているOllama）にリクエストを送信
         json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
+            "model": OLLAMA_MODEL,  # 使用するモデルを指定（例: qwen2.5:7b-instruct）
+            "prompt": prompt,   # 生成したいテキストの内容を指定
+            "stream": False,   # ストリーミングは生成結果をリアルタイムで受け取る場合に使用
             "options": {
-                "temperature": temperature,
-            },
+                "temperature": temperature,   # 生成の多様性を制御するパラメータ。0に近いほど決定的な出力、1に近いほどランダムな出力
+            },   
         },
         timeout=LLM_TIMEOUT_SECONDS,
     )
@@ -211,14 +211,13 @@ Return only valid JSON with this exact structure:
     "naturalness": 0
   }},
   "corrected_answer": "",
-  "more_natural_answer": "",
   "feedback_ja": "",
   "model_answer": ""
 }}
 
 Scoring rules:
-- overall_score must be an integer from 0 to 100.
 - each score in scores must be an integer from 1 to 5.
+- overall_score must be the sum of relevance, grammar, vocabulary, and naturalness, so it must be an integer from 4 to 20.
 - feedback_ja must be concise Japanese feedback.
 - corrected_answer should preserve the learner's intended meaning.
 - model_answer should match the learner level.
@@ -236,7 +235,6 @@ Scoring rules:
                 "naturalness": "-",
             },
             "corrected_answer": "",
-            "more_natural_answer": "",
             "feedback_ja": f"LLMの出力をJSONとして解釈できませんでした: {exc}",
             "model_answer": raw,
         }
@@ -247,7 +245,7 @@ def format_result(result: dict[str, Any]) -> str:
     return f"""
 ## Score
 
-**Overall:** {result.get("overall_score", "-")} / 100
+**Overall:** {result.get("overall_score", "-")} / 20
 
 | Criterion | Score |
 | --- | --- |
@@ -354,4 +352,4 @@ with gr.Blocks(title="English Speaking Feedback") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(server_port=get_server_port())
+    demo.launch(server_port=get_server_port(), show_api=False)
