@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# 個人用の作業記録・詳細な検証データ
+/コードレビュー.md
+/実装とテスト結果.md
+/validation/
+/.local-notes/
